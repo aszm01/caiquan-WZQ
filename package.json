@@ -1,0 +1,12 @@
+{
+  "name": "wzq",
+  "version": "1.0.0",
+  "description": "猜拳五子棋 - 联机对战小游戏",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}

@@ -1,0 +1,10 @@
+# 依赖目录（本地安装的，不需要上传）
+node_modules/
+
+# 日志
+*.log
+npm-debug.log*
+
+# 系统文件
+.DS_Store
+Thumbs.db
