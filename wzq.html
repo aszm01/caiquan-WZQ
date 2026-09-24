@@ -76,6 +76,10 @@
                 height: 34px;
                 margin-left: -17px;
                 margin-top: -17px;
+                touch-action: none; /* 阻止长按/滑动时的页面滚动与双击缩放（移动端手势必需） */
+                -webkit-touch-callout: none;
+                -webkit-user-select: none;
+                user-select: none;
             }
             .cross-point:hover {
                 @apply bg-black/10 scale-110;
@@ -301,7 +305,7 @@
                 <div class="absolute -inset-4 bg-gradient-to-br from-primary/20 to-secondary/20 rounded-2xl blur-md opacity-70"></div>
                 <div id="board-container" class="relative border-6 border-primary rounded-xl shadow-xl overflow-hidden">
                     <div class="board-texture"></div>
-                    <div id="board" class="bg-board relative z-10"></div>
+                    <div id="board" class="bg-board relative z-10" style="user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;-webkit-user-drag:none;"></div>
                     <!-- 特殊事件提示弹窗 -->
                     <div id="event-popup" class="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-white rounded-2xl shadow-2xl p-6 z-1000 hidden">
                         <div class="event-title text-2xl font-bold text-center text-primary mb-2" id="event-title"></div>
@@ -348,6 +352,7 @@
                             <i class="fa fa-hand-paper-o mr-2 text-lg"></i>布
                         </div>
                     </div>
+                    <p class="text-xs text-gray-400 text-center mt-2">手机端：长按棋盘交叉点，向四个方向滑动直接出招（←石头 ↑剪刀 →布 ↓取消）</p>
                 </div>
                 
                 <div class="game-card">
@@ -384,7 +389,7 @@
     <script>
         // 游戏常量
         const BOARD_SIZE = 15;
-        const CELL_SIZE = 36;
+        let CELL_SIZE = 36; // 移动端会自动缩小（自适应屏幕宽度）
         const MARGIN = 32;
         const PIECE_SIZE = 28;
 
@@ -412,6 +417,40 @@
             restartRequested: false,
             gameHistory: [] // 游戏历史记录
         };
+
+        // 长按滑动手势状态（移动端出招交互）
+        const swipe = {
+            active: false,   // 是否处于"出招选择"模式（长按已触发）
+            pending: false,  // 手指已按下，等待长按判定
+            timer: null,
+            startX: 0,
+            startY: 0,
+            row: -1,
+            col: -1,
+            dir: null,       // 'up' | 'down' | 'left' | 'right' | null
+            placed: false    // 手势已落子（用于抑制随后的合成 click）
+        };
+
+        // 滑动方向 → 出招类型（用户约定：左=石头，上=剪刀，右=布，下=取消）
+        const SWIPE_DIR_TYPE = {
+            left: TYPE.STONE,
+            up: TYPE.SCISSORS,
+            right: TYPE.CLOTH,
+            down: null
+        };
+        let swipePicker = null; // 手势选择器 DOM
+        let swipeGhost = null;  // 手势预选虚影（模拟电脑滚轮预选感）
+        // 记录是否发生过真实触摸：只在确实触摸过时才禁用桌面鼠标虚影（手机触摸防跟手跑；触屏笔记本用鼠标时保持跟手）
+        let touchSeen = false;
+        document.addEventListener('touchstart', () => { touchSeen = true; }, { passive: true, once: true });
+        // 缓存棋盘位置：鼠标高频移动时避免反复 getBoundingClientRect 强制重排，消除虚影像应延迟
+        let boardRectCache = null;
+        function getBoardRect() {
+            if (!boardRectCache) boardRectCache = boardEl.getBoundingClientRect();
+            return boardRectCache;
+        }
+        window.addEventListener('scroll', () => { boardRectCache = null; }, { passive: true });
+        window.addEventListener('resize', () => { boardRectCache = null; });
 
         // 网络状态
         const net = {
@@ -462,6 +501,9 @@
 
         // 初始化棋盘
         function initBoard() {
+            // 棋盘格子：默认 36px；屏幕放不下时按视口宽度自动缩小（任何手机/窄屏浏览器都适配，桌面宽屏保持原样）
+            const availW = Math.min(window.innerWidth || 768, document.documentElement.clientWidth || 768) - 20;
+            CELL_SIZE = Math.min(36, Math.max(20, Math.floor((availW - MARGIN * 2) / (BOARD_SIZE - 1))));
             const boardWidth = (BOARD_SIZE - 1) * CELL_SIZE + MARGIN * 2;
             boardEl.style.width = `${boardWidth}px`;
             boardEl.style.height = `${boardWidth}px`;
@@ -506,11 +548,18 @@
                 for (let col = 0; col < BOARD_SIZE; col++) {
                     const point = document.createElement('div');
                     point.className = 'cross-point';
+                    // 触摸点尺寸跟随格子大小：手机缩格时同步缩小，避免相邻交叉点重叠导致按偏一格
+                    const ps = Math.min(34, CELL_SIZE);
+                    point.style.width = ps + 'px';
+                    point.style.height = ps + 'px';
+                    point.style.marginLeft = -ps / 2 + 'px';
+                    point.style.marginTop = -ps / 2 + 'px';
                     point.style.left = `${MARGIN + col * CELL_SIZE}px`;
                     point.style.top = `${MARGIN + row * CELL_SIZE}px`;
                     point.dataset.row = row;
                     point.dataset.col = col;
                     point.addEventListener('click', () => handleBoardClick(row, col));
+                    point.addEventListener('touchstart', (e) => onCrossPointTouchStart(e, row, col), false);
                     boardEl.appendChild(point);
                 }
             }
@@ -537,7 +586,8 @@
 
             // 绑定重新开局按钮事件
             restartBtn.addEventListener('click', () => {
-                if (net.isConnected) {
+                // 没有对手时（等待匹配/对手已离开）重开按钮不可用
+                if (net.isConnected && net.opponentUsername) {
                     sendRestartRequest();
                 }
             });
@@ -594,18 +644,19 @@
                 forceUpdateGhostFromMousePos();
             });
 
-            // 鼠标移动更新虚影
+            // 鼠标移动更新虚影（只在真实触摸过后才禁用；纯鼠标与触屏笔记本用鼠标时保持跟手）
             boardEl.addEventListener('mousemove', (e) => {
-                const rect = boardEl.getBoundingClientRect();
+                if (touchSeen) { hideGhostPiece(); return; }
+                const rect = getBoardRect();
                 game.lastMousePos = {
                     x: e.clientX - rect.left,
                     y: e.clientY - rect.top
                 };
-                
+
                 if (canOperate() && game.selectedType !== TYPE.NONE) {
                     const col = Math.round((game.lastMousePos.x - MARGIN) / CELL_SIZE);
                     const row = Math.round((game.lastMousePos.y - MARGIN) / CELL_SIZE);
-                    
+
                     if (row !== game.lastGhostPos.row || col !== game.lastGhostPos.col) {
                         game.lastGhostPos = { row, col };
                         updateGhostPiece();
@@ -616,6 +667,9 @@
             });
 
             boardEl.addEventListener('mouseleave', hideGhostPiece);
+
+            // 屏蔽棋盘上长按/右键时浏览器弹出的功能菜单（Android/其他手机浏览器长按棋盘的选择列表等）
+            boardEl.addEventListener('contextmenu', (e) => e.preventDefault());
 
             // 初始化状态
             updateStatus();
@@ -877,6 +931,9 @@
                     net.roomId = message.roomId; // 保存房间ID
                     roomModal.classList.remove('show');  // 隐藏房间弹窗
                     showLeaveButton(); // 显示退出按钮
+                    // 等待对手期间：棋盘不可操作、重新开局按钮不可用（无论是否试过落子）
+                    disableBoard();
+                    hideRestartButton();
                     // 显示等待对手状态
                     setTimeout(() => {
                         resultEl.textContent = `正在等待对手...（你的名字：${net.username}）`;
@@ -918,6 +975,7 @@
                 case 'waiting':
                     resultEl.textContent = `正在等待对手...（你的名字：${net.username}）`;
                     hideRestartButton();
+                    disableBoard(); // 等待对手期间棋盘不可试落子
                     showLeaveButton(); // 显示退出按钮
                     break;
                 case 'matchSuccess':
@@ -1150,29 +1208,36 @@
             }
         }
 
-        // 处理棋盘点击
+        // 处理棋盘点击（桌面 / 快速点按）
         function handleBoardClick(row, col) {
+            if (swipe.placed) { swipe.placed = false; return; } // 手势落子后浏览器合成的 click，直接忽略
             if (!canOperate()) return;
 
             if (game.selectedType !== TYPE.NONE) {
-                if (isValidPosition(row, col)) {
-                    const myMove = { row, col, type: game.selectedType };
-                    if (net.role === 0) {
-                        game.currentRoundMoves.black = myMove;
-                    } else {
-                        game.currentRoundMoves.white = myMove;
-                    }
-                    sendMoveToServer(myMove);
-                    net.hasSubmitted = true;
-                    resultEl.textContent = `提交成功，等待对手...`;
-                    clearGhostPiece();
-                    game.selectedType = TYPE.NONE;
-                    updateTypeButtons();
-                    disableBoard();
-                }
+                placeMove(row, col, game.selectedType);
             } else {
-                resultEl.textContent = '请先选择类型（按钮/滚轮）';
+                resultEl.textContent = '请先选择类型（按钮/滚轮/长按棋盘滑动）';
             }
+        }
+
+        // 统一落子入口：校验 → 记录 → 发送 → 清理 → 禁用棋盘
+        function placeMove(row, col, type) {
+            if (!canOperate()) return;
+            if (!isValidPosition(row, col)) return;
+
+            const myMove = { row, col, type };
+            if (net.role === 0) {
+                game.currentRoundMoves.black = myMove;
+            } else {
+                game.currentRoundMoves.white = myMove;
+            }
+            sendMoveToServer(myMove);
+            net.hasSubmitted = true;
+            resultEl.textContent = `提交成功，等待对手...`;
+            clearGhostPiece();
+            game.selectedType = TYPE.NONE;
+            updateTypeButtons();
+            disableBoard();
         }
 
         // 发送落子到服务器
@@ -1184,6 +1249,215 @@
                 }));
             }
         }
+
+        // ===== 移动端：长按棋盘交叉点 + 四方向滑动出招（兼容微信内置浏览器） =====
+        function onCrossPointTouchStart(e, row, col) {
+            // 阻止手机浏览器长按弹出的功能菜单：夸克等浏览器自定义长按菜单不走 contextmenu，需直接阻止触摸默认手势
+            e.preventDefault();
+            if (!canOperate()) return;
+            if (swipe.active || swipe.pending) return;
+            const t = e.touches[0];
+            if (!t) return;
+            swipe.pending = true;
+            swipe.startX = t.clientX;
+            swipe.startY = t.clientY;
+            swipe.row = row;
+            swipe.col = col;
+            swipe.dir = null;
+            swipe.placed = false;
+            swipe.timer = setTimeout(() => {
+                swipe.timer = null;
+                if (swipe.pending && canOperate()) {
+                    // 触摸点已跟随格子大小、不再重叠：直接使用长按命中的交叉点，所见即所得
+                    swipe.active = true;
+                    showSwipePicker();
+                    updateSwipeDir(null);
+                }
+            }, 450); // 长按 450ms 触发
+        }
+
+        // 创建四方向选择器（只创建一次）：四个圆形按钮直接浮在屏幕上，位置由 showSwipePicker 动态计算
+        function createSwipePicker() {
+            const picker = document.createElement('div');
+            picker.id = 'swipe-picker';
+            picker.style.cssText = 'position:fixed;inset:0;z-index:70;display:none;touch-action:none;pointer-events:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;';
+            picker.innerHTML =
+                '<div data-dir="up" class="swipe-dir" style="position:fixed;width:48px;height:48px;border-radius:50%;background:rgba(255,255,255,0.72);border:2px solid rgba(0,0,0,0.12);display:flex;align-items:center;justify-content:center;font-size:20px;color:#1A1B1C;box-shadow:0 4px 12px rgba(0,0,0,0.15);box-sizing:border-box;transform:translate(-50%,-50%);"><i class="fa fa-scissors"></i></div>' +
+                '<div data-dir="left" class="swipe-dir" style="position:fixed;width:48px;height:48px;border-radius:50%;background:rgba(255,255,255,0.72);border:2px solid rgba(0,0,0,0.12);display:flex;align-items:center;justify-content:center;font-size:20px;color:#1A1B1C;box-shadow:0 4px 12px rgba(0,0,0,0.15);box-sizing:border-box;transform:translate(-50%,-50%);"><i class="fa fa-hand-rock-o"></i></div>' +
+                '<div data-dir="right" class="swipe-dir" style="position:fixed;width:48px;height:48px;border-radius:50%;background:rgba(255,255,255,0.72);border:2px solid rgba(0,0,0,0.12);display:flex;align-items:center;justify-content:center;font-size:20px;color:#1A1B1C;box-shadow:0 4px 12px rgba(0,0,0,0.15);box-sizing:border-box;transform:translate(-50%,-50%);"><i class="fa fa-hand-paper-o"></i></div>' +
+                '<div data-dir="down" class="swipe-dir" style="position:fixed;width:48px;height:48px;border-radius:50%;background:rgba(255,255,255,0.72);border:2px solid rgba(229,72,77,0.45);display:flex;align-items:center;justify-content:center;font-size:20px;color:#E5484D;box-shadow:0 4px 12px rgba(0,0,0,0.15);box-sizing:border-box;transform:translate(-50%,-50%);"><i class="fa fa-times"></i></div>';
+            document.body.appendChild(picker);
+            return picker;
+        }
+
+        function showSwipePicker() {
+            if (!swipePicker) swipePicker = createSwipePicker();
+            swipePicker.style.display = 'block';
+            refreshSwipeUI();
+        }
+
+        // 统一刷新：方向盘圆心 + 预选虚影都跟随当前预选交叉点（滑动重新吸附时也调用）
+        function refreshSwipeUI() {
+            if (!swipePicker) return;
+            // 圆心 = 预选交叉点中心（用棋盘真实屏幕坐标计算，永远不偏移）
+            const rect = boardEl.getBoundingClientRect();
+            const cx = rect.left + MARGIN + swipe.col * CELL_SIZE;
+            const cy = rect.top + MARGIN + swipe.row * CELL_SIZE;
+            const off = 55;  // 按钮中心到圆心的距离
+            const half = 32; // 按钮半宽 + 屏幕边距余量
+            const topPad = 14; // 顶部额外让开状态栏
+            const dirs = {
+                up: [cx, cy - off],
+                down: [cx, cy + off],
+                left: [cx - off, cy],
+                right: [cx + off, cy]
+            };
+            swipePicker.querySelectorAll('.swipe-dir').forEach(el => {
+                const d = el.getAttribute('data-dir');
+                let bx = dirs[d][0];
+                let by = dirs[d][1];
+                // 靠边的按钮自己向屏幕内收缩，圆心不动
+                bx = Math.min(Math.max(bx, half), window.innerWidth - half);
+                by = Math.min(Math.max(by, half + topPad), window.innerHeight - half - 8);
+                el.style.left = bx + 'px';
+                el.style.top = by + 'px';
+            });
+            // 预选虚影：位置定在预选交叉点，显示当前方向的图案（无方向时为空预选圆）；滑向取消时消失
+            if (swipe.dir === 'down') {
+                hideSwipeGhost();
+            } else {
+                showSwipeGhost(swipe.row, swipe.col, swipe.dir ? SWIPE_DIR_TYPE[swipe.dir] : null);
+            }
+        }
+
+        function hideSwipePicker() {
+            if (swipePicker) swipePicker.style.display = 'none';
+        }
+
+        // 高亮当前滑动的方向（圆形按钮），并同步更新交叉点上的预选虚影
+        function updateSwipeDir(dir) {
+            if (!swipePicker) return;
+            const items = swipePicker.querySelectorAll('.swipe-dir');
+            items.forEach(el => {
+                const on = el.getAttribute('data-dir') === dir;
+                const isCancel = el.getAttribute('data-dir') === 'down';
+                if (on) {
+                    el.style.background = 'rgba(139,90,43,0.85)';
+                    el.style.borderColor = 'rgba(139,90,43,1)';
+                    el.style.boxShadow = '0 0 0 4px rgba(139,90,43,0.28)';
+                    el.style.color = '#FFFFFF';
+                } else {
+                    el.style.background = 'rgba(255,255,255,0.72)';
+                    el.style.borderColor = isCancel ? 'rgba(229,72,77,0.45)' : 'rgba(0,0,0,0.12)';
+                    el.style.boxShadow = '0 4px 12px rgba(0,0,0,0.15)';
+                    el.style.color = isCancel ? '#E5484D' : '#1A1B1C';
+                }
+            });
+            // 预选虚影：位置永远定在预选交叉点（不随滑动跑），滑向哪个方向就在预选位上显示对应图案；取消时消失
+            if (dir === 'down') {
+                hideSwipeGhost();
+            } else {
+                showSwipeGhost(swipe.row, swipe.col, dir ? SWIPE_DIR_TYPE[dir] : null);
+            }
+        }
+
+        // 手势预选虚影：取/建一个位于棋盘内的虚影棋子元素
+        function getSwipeGhost() {
+            if (!swipeGhost) {
+                swipeGhost = document.createElement('div');
+                swipeGhost.className = `absolute rounded-full flex items-center justify-center text-sm font-bold z-20 ${net.role === 0 ? 'ghost-black' : 'ghost-white'}`;
+                swipeGhost.style.width = '36px';
+                swipeGhost.style.height = '36px';
+                boardEl.appendChild(swipeGhost);
+            }
+            return swipeGhost;
+        }
+
+        function showSwipeGhost(row, col, type) {
+            const g = getSwipeGhost();
+            // 虚影尺寸跟随格子大小：手机缩格时虚影同步缩小，精确贴住预选交叉点，不会盖到相邻格
+            const gs = Math.min(36, CELL_SIZE);
+            g.style.width = gs + 'px';
+            g.style.height = gs + 'px';
+            g.style.left = `${MARGIN + col * CELL_SIZE - gs / 2}px`;
+            g.style.top = `${MARGIN + row * CELL_SIZE - gs / 2}px`;
+            // 位置永远定在预选交叉点；有方向时显示对应手势图案（石头/剪刀/布），无方向时显示空预选圆
+            g.innerHTML = (type !== null && type !== undefined) ? getTypeIcon(type) : '';
+            g.classList.remove('hidden');
+        }
+
+        function hideSwipeGhost() {
+            if (swipeGhost) swipeGhost.classList.add('hidden');
+        }
+
+        // 文档级 touchmove：激活后拦截页面滚动并计算方向；激活前手指已移动则取消长按
+        document.addEventListener('touchmove', (e) => {
+            if (swipe.pending && !swipe.active) {
+                const t = e.touches[0];
+                if (t && (Math.abs(t.clientX - swipe.startX) > 15 || Math.abs(t.clientY - swipe.startY) > 15)) {
+                    clearTimeout(swipe.timer);
+                    swipe.timer = null;
+                    swipe.pending = false;
+                }
+                return; // 未激活时允许页面正常滚动
+            }
+            if (!swipe.active) return;
+            e.preventDefault(); // 关键：阻止微信/浏览器在滑动手势时滚动页面
+            const t = e.touches[0];
+            if (!t) return;
+            const dx = t.clientX - swipe.startX;
+            const dy = t.clientY - swipe.startY;
+            const TH = 24; // 方向判定阈值（像素）
+            swipe.dir = null;
+            if (Math.abs(dx) > TH || Math.abs(dy) > TH) {
+                if (Math.abs(dx) >= Math.abs(dy)) {
+                    swipe.dir = dx > 0 ? 'right' : 'left';
+                } else {
+                    swipe.dir = dy < 0 ? 'up' : 'down';
+                }
+            }
+            updateSwipeDir(swipe.dir);
+            // 滑动期间落子位置 100% 锁定在预选交叉点：想换位置就抬手，重新长按点选另一个交叉点
+        }, false);
+
+        // 文档级 touchend：快速点按走原逻辑；长按激活后按滑动方向出招
+        document.addEventListener('touchend', () => {
+            if (swipe.pending && !swipe.active) {
+                clearTimeout(swipe.timer);
+                swipe.timer = null;
+                swipe.pending = false;
+                handleBoardClick(swipe.row, swipe.col);
+                return;
+            }
+            if (!swipe.active) return;
+            swipe.pending = false;
+            clearTimeout(swipe.timer);
+            swipe.timer = null;
+            const dir = swipe.dir;
+            const row = swipe.row;
+            const col = swipe.col;
+            swipe.active = false;
+            swipe.dir = null;
+            hideSwipePicker();
+            hideSwipeGhost();
+            const type = dir ? SWIPE_DIR_TYPE[dir] : null;
+            if (type !== null && type !== undefined) {
+                swipe.placed = true; // 抑制随后的合成 click，防止二次落子
+                placeMove(row, col, type);
+            }
+            // 无方向 / 向下滑 = 取消
+        }, false);
+
+        // 触摸被打断（来电、系统弹窗等）时清理手势状态
+        document.addEventListener('touchcancel', () => {
+            clearTimeout(swipe.timer);
+            swipe.timer = null;
+            swipe.pending = false;
+            swipe.active = false;
+            swipe.dir = null;
+            hideSwipePicker();
+            hideSwipeGhost();
+        }, false);
 
         // 应用双方落子并结算
         function applyAllMoves(allMoves) {
@@ -1693,6 +1967,7 @@
 
         // 更新虚影棋子
         function updateGhostPiece() {
+            if (touchSeen) { hideGhostPiece(); return; } // 真实触摸过才禁用桌面鼠标虚影（手机）；纯鼠标保持跟手
             const { row, col } = game.lastGhostPos;
             if (
                 row < 0 || row >= BOARD_SIZE ||
