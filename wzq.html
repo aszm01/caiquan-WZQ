@@ -271,6 +271,7 @@
     <div id="win-popup" class="win-popup">
         <div class="win-title" id="win-title">🎉 游戏结束 🎉</div>
         <div class="win-message" id="win-message">黑方胜利！</div>
+        <div class="win-sub text-sm text-gray-500 mt-1 text-center" id="win-sub"></div>
         <div class="win-stats">
             <div class="win-stat-item">
                 <div class="win-stat-label">回合数</div>
@@ -388,6 +389,190 @@
     </div>
 
     <script>
+        // ===== 动效系统：动画样式 + Canvas 粒子层 + 手机震动（纯代码，无外部素材） =====
+        const fxStyle = document.createElement('style');
+        fxStyle.textContent = [
+            '@keyframes cfDropHeavy{0%{transform:scale(0.2) translateY(-24px);opacity:0;}55%{transform:scale(1.3) translateY(0);opacity:1;}75%{transform:scale(0.9);}100%{transform:scale(1);opacity:1;}}',
+            '@keyframes cfCutIn{0%{transform:scale(0.5) rotate(-30deg) translateX(-30px);opacity:0;}50%{transform:scale(1.15) rotate(5deg) translateX(4px);opacity:1;}100%{transform:scale(1) rotate(0) translateX(0);opacity:1;}}',
+            '@keyframes cfFloatIn{0%{transform:translateY(-46px) scale(0.85);opacity:0;}55%{opacity:1;}100%{transform:translateY(0) scale(1);opacity:1;}}',
+            '@keyframes cfBoardShakeStrong{0%,100%{transform:translate(0,0);}15%{transform:translate(-2px,1px);}30%{transform:translate(2px,-1px);}45%{transform:translate(-1px,2px);}60%{transform:translate(1px,-2px);}75%{transform:translate(-2px,0);}90%{transform:translate(2px,0);}}',
+            '@keyframes cfBoardShakeLight{0%,100%{transform:translate(0,0);}25%{transform:translate(-1px,0);}50%{transform:translate(1px,0);}75%{transform:translate(-1px,0);}}',
+            '@keyframes cfClashFlash{0%{opacity:0;transform:scale(0.4);}30%{opacity:0.95;transform:scale(1.1);}100%{opacity:0;transform:scale(1.6);}}',
+            '@keyframes cfShock{0%{opacity:0.85;transform:scale(0.2);}100%{opacity:0;transform:scale(2.6);}}',
+            '@keyframes cfWinPop{0%{transform:scale(1);}30%{transform:scale(1.35);}60%{transform:scale(0.9);}100%{transform:scale(1.12);}}',
+            '@keyframes cfWinLineGlow{0%,100%{opacity:0.9;filter:brightness(1);}50%{opacity:1;filter:brightness(1.9);}}',
+            '@keyframes cfColdFlash{0%{opacity:0;filter:grayscale(0);}40%{opacity:0.55;filter:grayscale(1) brightness(0.92);}100%{opacity:0;filter:grayscale(0);}}',
+            '@keyframes cfScreenFlash{0%{opacity:0;}30%{opacity:0.5;}100%{opacity:0;}}',
+            '.cf-anim-drop-stone{animation:cfDropHeavy 0.2s ease-out forwards;}',
+            '.cf-anim-drop-scissors{animation:cfCutIn 0.15s ease-out forwards;}',
+            '.cf-anim-drop-cloth{animation:cfFloatIn 0.35s ease-out forwards;}',
+            '.cf-shake-strong{animation:cfBoardShakeStrong 0.3s ease-out;}',
+            '.cf-shake-light{animation:cfBoardShakeLight 0.2s ease-out;}',
+            '.cf-clash-flash{animation:cfClashFlash 0.3s ease-out forwards;}',
+            '.cf-shock{animation:cfShock 0.45s ease-out forwards;}',
+            '.cf-win-pop{animation:cfWinPop 0.5s ease-out 0.15s both;}',
+            '.cf-win-glow{animation:cfWinLineGlow 0.6s ease-in-out 3;}',
+            '.cf-cold-flash{animation:cfColdFlash 0.5s ease-out forwards;}',
+            '.cf-screen-flash{animation:cfScreenFlash 0.35s ease-out forwards;}'
+        ].join('\n');
+        document.head.appendChild(fxStyle);
+
+        let fxCanvas = null, fxCtx = null, fxParticles = [], fxRaf = null;
+        function ensureFxCanvas() {
+            if (fxCanvas) return;
+            fxCanvas = document.createElement('canvas');
+            fxCanvas.id = 'fx-canvas';
+            fxCanvas.style.cssText = 'position:absolute;inset:0;pointer-events:none;z-index:60;';
+            const w = boardEl.offsetWidth || 500;
+            fxCanvas.width = w; fxCanvas.height = w;
+            fxCtx = fxCanvas.getContext('2d');
+            boardEl.appendChild(fxCanvas);
+        }
+        function fxBurst(cx, cy, opts) {
+            ensureFxCanvas();
+            opts = opts || {};
+            const colors = opts.colors || ['#94D8C3'];
+            const count = opts.count || 12;
+            const speed = opts.speed || 3;
+            const up = opts.up || 0;
+            const size = opts.size || 3;
+            const decay = opts.decay || 0.03;
+            const g = opts.gravity || 0.12;
+            const shape = opts.shape || 'circle';
+            for (let i = 0; i < count; i++) {
+                const ang = Math.random() * Math.PI * 2;
+                const sp = speed * (0.4 + Math.random() * 0.8);
+                fxParticles.push({
+                    x: cx, y: cy,
+                    vx: Math.cos(ang) * sp,
+                    vy: Math.sin(ang) * sp - up,
+                    size: size * (0.6 + Math.random() * 0.8),
+                    life: 1, decay: decay,
+                    color: colors[i % colors.length],
+                    shape: shape,
+                    g: g
+                });
+            }
+            if (!fxRaf) fxRaf = requestAnimationFrame(fxTick);
+        }
+        function fxTick() {
+            fxCtx.clearRect(0, 0, fxCanvas.width, fxCanvas.height);
+            fxParticles = fxParticles.filter(function (p) { return p.life > 0; });
+            for (let i = 0; i < fxParticles.length; i++) {
+                const p = fxParticles[i];
+                p.x += p.vx; p.y += p.vy; p.vy += p.g; p.life -= p.decay;
+                fxCtx.globalAlpha = Math.max(0, p.life);
+                fxCtx.fillStyle = p.color;
+                if (p.shape === 'rect') fxCtx.fillRect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size);
+                else { fxCtx.beginPath(); fxCtx.arc(p.x, p.y, p.size, 0, Math.PI * 2); fxCtx.fill(); }
+            }
+            fxCtx.globalAlpha = 1;
+            if (fxParticles.length) fxRaf = requestAnimationFrame(fxTick);
+            else { fxRaf = null; fxCtx.clearRect(0, 0, fxCanvas.width, fxCanvas.height); }
+        }
+        function safeVibrate(pattern) {
+            if (!pattern) return;
+            if (navigator.vibrate) { try { navigator.vibrate(pattern); } catch (e) {} }
+        }
+        function fxCenter(row, col) { return { x: MARGIN + col * CELL_SIZE, y: MARGIN + row * CELL_SIZE }; }
+        function playBoardShake(strong) {
+            boardEl.classList.remove('cf-shake-strong', 'cf-shake-light');
+            boardEl.classList.add(strong ? 'cf-shake-strong' : 'cf-shake-light');
+            boardEl.addEventListener('animationend', function h() {
+                boardEl.classList.remove('cf-shake-strong', 'cf-shake-light');
+                boardEl.removeEventListener('animationend', h);
+            });
+        }
+        function playDropFx(el, type) {
+            if (type === TYPE.STONE) el.classList.add('cf-anim-drop-stone');
+            else if (type === TYPE.SCISSORS) el.classList.add('cf-anim-drop-scissors');
+            else if (type === TYPE.CLOTH) el.classList.add('cf-anim-drop-cloth');
+        }
+        function playClashFx(row, col) {
+            const c = fxCenter(row, col);
+            const flash = document.createElement('div');
+            flash.className = 'cf-clash-flash';
+            flash.style.cssText = 'position:absolute;left:' + (c.x - 30) + 'px;top:' + (c.y - 30) + 'px;width:60px;height:60px;border-radius:50%;background:radial-gradient(circle,rgba(255,255,255,0.95) 0%,rgba(255,255,255,0) 70%);z-index:55;pointer-events:none;';
+            boardEl.appendChild(flash);
+            setTimeout(function () { flash.remove(); }, 350);
+            const ring = document.createElement('div');
+            ring.className = 'cf-shock';
+            ring.style.cssText = 'position:absolute;left:' + (c.x - 34) + 'px;top:' + (c.y - 34) + 'px;width:68px;height:68px;border-radius:50%;border:3px solid rgba(255,255,255,0.9);z-index:55;pointer-events:none;box-sizing:border-box;';
+            boardEl.appendChild(ring);
+            setTimeout(function () { ring.remove(); }, 500);
+            fxBurst(c.x, c.y, { colors: ['#FFE9A8', '#FFFFFF', '#E4D48F'], count: 14, speed: 4, size: 2.5, gravity: 0.1, decay: 0.04 });
+            playBoardShake(true);
+        }
+        function playDrawFx(row, col) {
+            const c = fxCenter(row, col);
+            fxBurst(c.x, c.y, { colors: ['#8BC8EA', '#94D8C3', '#A3D5E8', '#FFFFFF'], count: 22, speed: 3.6, size: 3, up: 2.8, gravity: 0.14, decay: 0.03 });
+            const flash = document.createElement('div');
+            flash.className = 'cf-screen-flash';
+            flash.style.cssText = 'position:absolute;inset:0;background:rgba(255,255,255,0.75);z-index:55;pointer-events:none;';
+            boardEl.appendChild(flash);
+            setTimeout(function () { flash.remove(); }, 400);
+            playBoardShake(true);
+        }
+        function applyRoundFx(fx) {
+            if (!fx) return;
+            if (fx.kind === 'place') {
+                let strong = false, light = false;
+                for (let i = 0; i < fx.moves.length; i++) {
+                    const mv = fx.moves[i];
+                    const el = document.querySelector('.piece[data-row="' + mv.row + '"][data-col="' + mv.col + '"]');
+                    if (el) playDropFx(el, mv.type);
+                    if (mv.type === TYPE.STONE) strong = true;
+                    else if (mv.type === TYPE.SCISSORS) light = true;
+                }
+                if (strong) playBoardShake(true);
+                else if (light) playBoardShake(false);
+                if (strong) safeVibrate(60);
+                else if (light) safeVibrate(30);
+            } else if (fx.kind === 'clash') {
+                playClashFx(fx.row, fx.col);
+                const el = document.querySelector('.piece[data-row="' + fx.row + '"][data-col="' + fx.col + '"]');
+                if (el) el.classList.add('cf-win-pop');
+                safeVibrate([60, 40, 60]);
+            } else if (fx.kind === 'draw') {
+                playDrawFx(fx.row, fx.col);
+                safeVibrate([60, 30, 60, 30]);
+            }
+        }
+        function playWinFx() {
+            const wl = document.querySelector('.win-line');
+            if (wl) wl.classList.add('cf-win-glow');
+            if (game.winLine) {
+                const s = game.winLine.start, e = game.winLine.end;
+                const sx = MARGIN + s.col * CELL_SIZE, sy = MARGIN + s.row * CELL_SIZE;
+                const ex = MARGIN + e.col * CELL_SIZE, ey = MARGIN + e.row * CELL_SIZE;
+                for (let i = 0; i < 12; i++) {
+                    const t = i / 12;
+                    fxBurst(sx + (ex - sx) * t, sy + (ey - sy) * t, { colors: ['#E4D48F', '#C9A7E8', '#94D8C3'], count: 6, speed: 3.2, size: 2.5, up: 1.6, gravity: 0.05, decay: 0.035 });
+                }
+            }
+            const cw = boardEl.offsetWidth || 500;
+            fxBurst(cw / 2, cw / 2, { colors: ['#E4D48F', '#94D8C3', '#C9A7E8', '#8BC8EA'], count: 26, speed: 5, size: 3, up: 2.4, gravity: 0.09, decay: 0.02 });
+            safeVibrate([120, 50, 120]);
+        }
+        function playLoseFx() {
+            const loser = (game.winner === PLAYER.BLACK) ? PLAYER.WHITE : PLAYER.BLACK;
+            for (let row = 0; row < BOARD_SIZE; row++) {
+                for (let col = 0; col < BOARD_SIZE; col++) {
+                    const p = game.board[row][col];
+                    if (p.visible && p.player === loser) {
+                        fxBurst(MARGIN + col * CELL_SIZE, MARGIN + row * CELL_SIZE, { colors: ['#9CA3AF', '#6B7280', '#D1D5DB'], count: 5, speed: 2.6, size: 2, gravity: 0.16, decay: 0.045 });
+                    }
+                }
+            }
+            boardEl.classList.add('cf-cold-flash');
+            boardEl.addEventListener('animationend', function h2() { boardEl.classList.remove('cf-cold-flash'); boardEl.removeEventListener('animationend', h2); });
+            safeVibrate([80, 60, 80]);
+        }
+        function playDrawEndFx() {
+            const cw = boardEl.offsetWidth || 500;
+            fxBurst(cw / 2, cw / 2, { colors: ['#9EACEA', '#C9A7E8', '#94D8C3'], count: 22, speed: 4, size: 2.5, gravity: 0.04, decay: 0.025 });
+            safeVibrate([90, 50, 90]);
+        }
         // 游戏常量
         const BOARD_SIZE = 15;
         let CELL_SIZE = 36; // 移动端会自动缩小（自适应屏幕宽度）
@@ -491,6 +676,7 @@
         const winPopup = document.getElementById('win-popup');
         const winTitle = document.getElementById('win-title');
         const winMessage = document.getElementById('win-message');
+        const winSub = document.getElementById('win-sub');
         const winRounds = document.getElementById('win-rounds');
         const winRate = document.getElementById('win-rate');
         const winRestartBtn = document.getElementById('win-restart-btn');
@@ -1492,6 +1678,7 @@
                 return;
             }
 
+            let roundFx = null;
             const samePosition = (black.row === white.row) && (black.col === white.col);
 
             if (samePosition) {
@@ -1504,9 +1691,9 @@
                         visible: false
                     };
                     resultEl.textContent = `双方出了相同类型，此位置下回合禁下`;
-                    // 显示"静如止水"提示
-                    showEventPopup("静如止水", "尴尬的相遇凝结了时间，冻结了空气");
-                    showEventPopup("静如止水", "尴尬的相遇凝结了时间，冻结了空气");
+                    roundFx = { kind: 'draw', row: black.row, col: black.col };
+                    // 显示"静如止水"提示（延迟到动效结束后）
+                    setTimeout(() => showEventPopup("静如止水", "尴尬的相遇凝结了时间，冻结了空气"), 500);
                 } else if (
                     (black.type === TYPE.STONE && white.type === TYPE.SCISSORS) ||
                     (black.type === TYPE.SCISSORS && white.type === TYPE.CLOTH) ||
@@ -1518,8 +1705,9 @@
                         visible: true
                     };
                     resultEl.textContent = `黑方胜利，留下黑棋`;
-                    // 显示"飞沙走石"提示
-                    showEventPopup("飞沙走石", "输掉的棋子就应该扔进什刹海");
+                    roundFx = { kind: 'clash', row: black.row, col: black.col };
+                    // 显示"飞沙走石"提示（延迟到动效结束后）
+                    setTimeout(() => showEventPopup("飞沙走石", "输掉的棋子就应该扔进什刹海"), 500);
                 } else {
                     game.board[white.row][white.col] = {
                         player: PLAYER.WHITE,
@@ -1527,17 +1715,20 @@
                         visible: true
                     };
                     resultEl.textContent = `白方胜利，留下白棋`;
-                    // 显示"飞沙走石"提示
-                    showEventPopup("飞沙走石", "输掉的棋子就应该扔进什刹海");
+                    roundFx = { kind: 'clash', row: white.row, col: white.col };
+                    // 显示"飞沙走石"提示（延迟到动效结束后）
+                    setTimeout(() => showEventPopup("飞沙走石", "输掉的棋子就应该扔进什刹海"), 500);
                 }
             } else {
                 game.board[black.row][black.col].visible = true;
                 game.board[white.row][white.col].visible = true;
                 resultEl.textContent = "双方位置不同，棋子均显示";
+                roundFx = { kind: 'place', moves: [black, white] };
             }
 
             renderPieces();
             checkWinner();
+            applyRoundFx(roundFx);
 
             if (Array.isArray(game.winner) && game.winner.length === 2) {
                 statusEl.textContent = `双方同时获胜！`;
@@ -1636,17 +1827,28 @@
             
             if (Array.isArray(game.winner) && game.winner.length === 2) {
                 winTitle.textContent = "🎉 平局 🎉";
-                winMessage.textContent = "罕见局面，双方同时连成五子！";
+                winMessage.textContent = `鏖战${game.round}回合，势均力敌`;
+                winSub.textContent = "平分秋色，后会有期";
             } else if (game.winner === net.role) {
                 winTitle.textContent = "🎉 恭喜胜利 🎉";
-                winMessage.textContent = `你在第${game.round}回合获胜！`;
+                winMessage.textContent = `鏖战${game.round}回合，力克${net.opponentUsername || '对手'}`;
+                winSub.textContent = "山巅风冷，静候再来";
                 winMessage.classList.add('text-success');
             } else {
                 winTitle.textContent = "😢 游戏结束 😢";
-                winMessage.textContent = `你在第${game.round}回合被击败！`;
+                winMessage.textContent = `鏖战${game.round}回合，惜败于${net.opponentUsername || '对手'}`;
+                winSub.textContent = "江湖依旧，来日再战";
                 winMessage.classList.add('text-danger');
             }
             
+            // 终局动效：胜利/失败/平局三感
+            if (Array.isArray(game.winner) && game.winner.length === 2) {
+                playDrawEndFx();
+            } else if (game.winner === net.role) {
+                playWinFx();
+            } else {
+                playLoseFx();
+            }
             // 显示弹窗
             winPopup.classList.add('show');
         }
@@ -1870,6 +2072,8 @@
                     if (piece.visible && piece.player !== PLAYER.NONE) {
                         const pieceEl = document.createElement('div');
                         pieceEl.className = `piece absolute rounded-full flex items-center justify-center text-sm font-bold z-20 ${piece.player === PLAYER.BLACK ? 'piece-black' : 'piece-white'}`;
+                        pieceEl.dataset.row = row;
+                        pieceEl.dataset.col = col;
                         pieceEl.style.width = `${PIECE_SIZE}px`;
                         pieceEl.style.height = `${PIECE_SIZE}px`;
                         pieceEl.style.left = `${MARGIN + col * CELL_SIZE - PIECE_SIZE/2}px`;
