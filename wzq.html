@@ -221,12 +221,13 @@
     <!-- 用户名输入弹窗 -->
     <div id="username-modal" class="username-modal show"> <!-- 默认显示 -->
         <div class="username-modal-content">
-            <h3 class="text-xl font-bold text-primary mb-4 text-center">请输入用户名</h3>
+            <h3 class="text-xl font-bold text-primary text-center">请输入彩泉宗侠名</h3>
+            <p class="text-gray-500 text-sm mt-2 mb-4 text-center">三手定彩，一泉同源。玄岩裂风，覆云归泉。</p>
             <div class="flex gap-3">
                 <input 
                     type="text" 
                     id="username-input" 
-                    placeholder="你的名字（最多10字）" 
+                    placeholder="少侠的名号（最多10字）" 
                     class="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
                     maxlength="10"
                 >
@@ -234,8 +235,8 @@
                     确认
                 </button>
             </div>
-            <p id="username-error" class="text-red-500 text-sm mt-3 text-center hidden">请输入用户名</p>
-            <p class="text-gray-500 text-sm mt-2 text-center">设置后可创建或加入房间</p>
+            <p id="username-error" class="text-red-500 text-sm mt-3 text-center hidden">请输入彩泉宗侠名</p>
+            <p class="text-gray-500 text-sm mt-2 text-center">入册后，即可创建或加入江湖对局</p>
         </div>
     </div>
 
@@ -709,7 +710,7 @@
             const username = usernameInput.value.trim();
             
             if (!username) {
-                usernameError.textContent = '请输入用户名';
+                usernameError.textContent = '请输入彩泉宗侠名';
                 usernameError.classList.remove('hidden');
                 return;
             }
