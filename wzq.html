@@ -4,8 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>彩泉五子棋</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%2394D8C3' d='M12 2 L20 5 V11 C20 16 16.5 20.5 12 22 C7.5 20.5 4 16 4 11 V5 Z'/%3E%3Cpath fill='%234A90A2' d='M12 6 L16.5 8 V11.5 C16.5 14.5 14.5 17 12 18 C9.5 17 7.5 14.5 7.5 11.5 V8 Z'/%3E%3C/svg%3E">
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/tsparticles@2.12.0/tsparticles.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js"></script>
     <script>
         tailwind.config = {
             theme: {
@@ -403,6 +406,12 @@
             '@keyframes cfWinLineGlow{0%,100%{opacity:0.9;filter:brightness(1);}50%{opacity:1;filter:brightness(1.9);}}',
             '@keyframes cfColdFlash{0%{opacity:0;filter:grayscale(0);}40%{opacity:0.55;filter:grayscale(1) brightness(0.92);}100%{opacity:0;filter:grayscale(0);}}',
             '@keyframes cfScreenFlash{0%{opacity:0;}30%{opacity:0.5;}100%{opacity:0;}}',
+            '@keyframes cfShakeViolent{0%,100%{transform:translate(0,0);}10%{transform:translate(-4px,2px);}25%{transform:translate(3px,-3px);}40%{transform:translate(-3px,3px);}55%{transform:translate(4px,-2px);}70%{transform:translate(-2px,-4px);}85%{transform:translate(3px,3px);}}',
+            '@keyframes cfXBar{0%{transform:scaleX(0.1);opacity:0;}30%{opacity:0.95;}100%{transform:scaleX(1);opacity:0;}}',
+            '@keyframes cfCloud{0%{transform:scale(0.4);opacity:0.7;}100%{transform:scale(2.2);opacity:0;}}',
+            '@keyframes cfCollideY{from{transform:translateY(var(--d,0));}to{transform:translateY(var(--e,0));}}',
+            '@keyframes cfScissorPass{from{transform:translateX(var(--dx,0));opacity:1;}to{transform:translateX(0);opacity:0;}}',
+            '@keyframes cfClothDrift{0%{transform:translate(var(--sx,0),-52px) rotate(var(--rot,0deg));opacity:0;}25%{opacity:1;}100%{transform:translate(0,0) rotate(0);opacity:1;}}',
             '.cf-anim-drop-stone{animation:cfDropHeavy 0.2s ease-out forwards;}',
             '.cf-anim-drop-scissors{animation:cfCutIn 0.15s ease-out forwards;}',
             '.cf-anim-drop-cloth{animation:cfFloatIn 0.35s ease-out forwards;}',
@@ -413,7 +422,13 @@
             '.cf-win-pop{animation:cfWinPop 0.5s ease-out 0.15s both;}',
             '.cf-win-glow{animation:cfWinLineGlow 0.6s ease-in-out 3;}',
             '.cf-cold-flash{animation:cfColdFlash 0.5s ease-out forwards;}',
-            '.cf-screen-flash{animation:cfScreenFlash 0.35s ease-out forwards;}'
+            '.cf-screen-flash{animation:cfScreenFlash 0.35s ease-out forwards;}',
+            '.cf-shake-violent{animation:cfShakeViolent 0.42s ease-out;}',
+            '.cf-xbar{animation:cfXBar 0.3s ease-out forwards;}',
+            '.cf-cloud{animation:cfCloud 0.8s ease-out forwards;}',
+            '.cf-collide-y{animation:cfCollideY 0.2s ease-in forwards;}',
+            '.cf-scissor-pass{animation:cfScissorPass 0.28s ease-in forwards;}',
+            '.cf-cloth-drift{animation:cfClothDrift 0.5s ease-out forwards;}'
         ].join('\n');
         document.head.appendChild(fxStyle);
 
@@ -438,7 +453,7 @@
             const size = opts.size || 3;
             const decay = opts.decay || 0.03;
             const g = opts.gravity || 0.12;
-            const shape = opts.shape || 'circle';
+            const shard = opts.shape === 'shard';
             for (let i = 0; i < count; i++) {
                 const ang = Math.random() * Math.PI * 2;
                 const sp = speed * (0.4 + Math.random() * 0.8);
@@ -449,8 +464,11 @@
                     size: size * (0.6 + Math.random() * 0.8),
                     life: 1, decay: decay,
                     color: colors[i % colors.length],
-                    shape: shape,
-                    g: g
+                    shape: shard ? 'shard' : (opts.shape || 'circle'),
+                    g: g,
+                    rot: shard ? Math.random() * Math.PI * 2 : 0,
+                    rotSpeed: shard ? (Math.random() - 0.5) * 0.4 : 0,
+                    sz: shard ? 2.5 + Math.random() * 3 : 0
                 });
             }
             if (!fxRaf) fxRaf = requestAnimationFrame(fxTick);
@@ -463,7 +481,19 @@
                 p.x += p.vx; p.y += p.vy; p.vy += p.g; p.life -= p.decay;
                 fxCtx.globalAlpha = Math.max(0, p.life);
                 fxCtx.fillStyle = p.color;
-                if (p.shape === 'rect') fxCtx.fillRect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size);
+                if (p.shape === 'shard') {
+                    p.rot += p.rotSpeed;
+                    fxCtx.save();
+                    fxCtx.translate(p.x, p.y);
+                    fxCtx.rotate(p.rot);
+                    fxCtx.beginPath();
+                    fxCtx.moveTo(p.sz, 0);
+                    fxCtx.lineTo(-p.sz * 0.7, p.sz * 0.6);
+                    fxCtx.lineTo(-p.sz * 0.3, -p.sz * 0.8);
+                    fxCtx.closePath();
+                    fxCtx.fill();
+                    fxCtx.restore();
+                } else if (p.shape === 'rect') fxCtx.fillRect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size);
                 else { fxCtx.beginPath(); fxCtx.arc(p.x, p.y, p.size, 0, Math.PI * 2); fxCtx.fill(); }
             }
             fxCtx.globalAlpha = 1;
@@ -503,15 +533,131 @@
             fxBurst(c.x, c.y, { colors: ['#FFE9A8', '#FFFFFF', '#E4D48F'], count: 14, speed: 4, size: 2.5, gravity: 0.1, decay: 0.04 });
             playBoardShake(true);
         }
-        function playDrawFx(row, col) {
+        // 剪赢：横向白光（裂风横切）
+        function scissorWinFx(row, col) {
             const c = fxCenter(row, col);
-            fxBurst(c.x, c.y, { colors: ['#8BC8EA', '#94D8C3', '#A3D5E8', '#FFFFFF'], count: 22, speed: 3.6, size: 3, up: 2.8, gravity: 0.14, decay: 0.03 });
-            const flash = document.createElement('div');
-            flash.className = 'cf-screen-flash';
-            flash.style.cssText = 'position:absolute;inset:0;background:rgba(255,255,255,0.75);z-index:55;pointer-events:none;';
-            boardEl.appendChild(flash);
-            setTimeout(function () { flash.remove(); }, 400);
-            playBoardShake(true);
+            const bar = document.createElement('div');
+            bar.className = 'cf-xbar';
+            bar.style.cssText = 'position:absolute;left:' + (c.x - 34) + 'px;top:' + (c.y - 2) + 'px;width:68px;height:5px;background:linear-gradient(90deg,rgba(255,255,255,0),rgba(255,255,255,0.95),rgba(255,255,255,0));z-index:55;pointer-events:none;filter:blur(1px);';
+            boardEl.appendChild(bar);
+            setTimeout(function () { bar.remove(); }, 380);
+            fxBurst(c.x - 20, c.y, { colors: ['#FFFFFF', '#D9F2FF'], count: 4, speed: 2.5, size: 1.5, gravity: 0, decay: 0.05 });
+            fxBurst(c.x + 20, c.y, { colors: ['#FFFFFF', '#D9F2FF'], count: 4, speed: 2.5, size: 1.5, gravity: 0, decay: 0.05 });
+            playBoardShake(false);
+        }
+        // 布赢：云气覆盖
+        function clothWinFx(row, col) {
+            const c = fxCenter(row, col);
+            [[0, 0], [36, 30], [-36, 24]].forEach(function (cfg) {
+                const cloud = document.createElement('div');
+                cloud.className = 'cf-cloud';
+                cloud.style.cssText = 'position:absolute;left:' + (c.x - 30 + cfg[0]) + 'px;top:' + (c.y - 30 + cfg[1]) + 'px;width:60px;height:60px;border-radius:50%;background:radial-gradient(circle,rgba(230,247,244,0.85) 0%,rgba(210,240,236,0.55) 45%,rgba(210,240,236,0) 75%);z-index:55;pointer-events:none;filter:blur(3px);';
+                boardEl.appendChild(cloud);
+                setTimeout(function () { cloud.remove(); }, 900);
+            });
+            fxBurst(c.x, c.y, { colors: ['#D6F0EA', '#EAF6F3', '#FFFFFF'], count: 8, speed: 1.8, size: 3, up: 1, gravity: -0.05, decay: 0.03 });
+            playBoardShake(false);
+        }
+        // 临时演出棋子（overlay，演出结束移除）
+        function spawnTempPiece(row, col, player, type) {
+            const el = document.createElement('div');
+            el.className = `piece absolute rounded-full flex items-center justify-center text-sm font-bold z-20 ${player === PLAYER.BLACK ? 'piece-black' : 'piece-white'}`;
+            el.style.width = PIECE_SIZE + 'px';
+            el.style.height = PIECE_SIZE + 'px';
+            el.style.left = (MARGIN + col * CELL_SIZE - PIECE_SIZE / 2) + 'px';
+            el.style.top = (MARGIN + row * CELL_SIZE - PIECE_SIZE / 2) + 'px';
+            el.innerHTML = getTypeIcon(type);
+            boardEl.appendChild(el);
+            return el;
+        }
+        // 捶捶：隔远纵撞，震撼碎裂（灰石碎块）
+        function stoneTieFx(row, col) {
+            const c = fxCenter(row, col);
+            const black = spawnTempPiece(row, col, PLAYER.BLACK, TYPE.STONE);
+            const white = spawnTempPiece(row, col, PLAYER.WHITE, TYPE.STONE);
+            black.style.setProperty('--d', '-48px');
+            black.style.setProperty('--e', '-16px');
+            white.style.setProperty('--d', '48px');
+            white.style.setProperty('--e', '16px');
+            black.classList.add('cf-collide-y');
+            white.classList.add('cf-collide-y');
+            setTimeout(function () {
+                playClashFx(row, col);
+                safeVibrate([70, 40, 70]);
+                setTimeout(function () {
+                    fxBurst(c.x, c.y, { shape: 'shard', colors: ['#9CA3AF', '#6B7280', '#4B5563', '#D1D5DB'], count: 26, speed: 5.5, size: 3, gravity: 0.28, decay: 0.055 });
+                    fxBurst(c.x, c.y, { colors: ['#FFFFFF', '#E5E7EB'], count: 10, speed: 4, size: 3, gravity: 0.1, decay: 0.05 });
+                    fxBurst(c.x, c.y - 16, { shape: 'shard', colors: ['#9CA3AF', '#6B7280', '#E5E7EB'], count: 8, speed: 4.2, size: 2.5, gravity: 0.3, decay: 0.06 });
+                    const flash = document.createElement('div');
+                    flash.className = 'cf-screen-flash';
+                    flash.style.cssText = 'position:absolute;inset:0;background:rgba(255,255,255,0.8);z-index:55;pointer-events:none;';
+                    boardEl.appendChild(flash);
+                    setTimeout(function () { flash.remove(); }, 420);
+                    boardEl.classList.remove('cf-shake-strong', 'cf-shake-violent');
+                    boardEl.classList.add('cf-shake-violent');
+                    boardEl.addEventListener('animationend', function h() {
+                        boardEl.classList.remove('cf-shake-violent');
+                        boardEl.removeEventListener('animationend', h);
+                    });
+                    black.remove(); white.remove();
+                }, 240);
+            }, 220);
+        }
+        // 剪剪：隔远同时相向交错飞，交错白光消失
+        function scissorTieFx(row, col) {
+            const c = fxCenter(row, col);
+            const black = spawnTempPiece(row, col, PLAYER.BLACK, TYPE.SCISSORS);
+            const white = spawnTempPiece(row, col, PLAYER.WHITE, TYPE.SCISSORS);
+            black.style.setProperty('--dx', '-46px');
+            white.style.setProperty('--dx', '46px');
+            black.classList.add('cf-scissor-pass');
+            white.classList.add('cf-scissor-pass');
+            setTimeout(function () {
+                [[45, 0], [-45, 70]].forEach(function (cfg) {
+                    const rot = document.createElement('div');
+                    rot.style.cssText = 'position:absolute;left:' + (c.x - 34) + 'px;top:' + (c.y - 2) + 'px;width:68px;height:4px;transform:rotate(' + cfg[0] + 'deg);z-index:55;pointer-events:none;';
+                    const bar = document.createElement('div');
+                    bar.className = 'cf-xbar';
+                    bar.style.cssText = 'width:100%;height:100%;background:linear-gradient(90deg,rgba(255,255,255,0),rgba(255,255,255,0.95),rgba(255,255,255,0));filter:blur(1px);';
+                    rot.appendChild(bar);
+                    bar.style.animationDelay = (cfg[1] / 1000) + 's';
+                    boardEl.appendChild(rot);
+                    setTimeout(function () { rot.remove(); }, 450);
+                });
+                playBoardShake(false);
+            }, 220);
+            setTimeout(function () {
+                black.remove(); white.remove();
+            }, 380);
+        }
+        // 布布：左右飘落，化云消失
+        function clothTieFx(row, col) {
+            const c = fxCenter(row, col);
+            const black = spawnTempPiece(row, col, PLAYER.BLACK, TYPE.CLOTH);
+            const white = spawnTempPiece(row, col, PLAYER.WHITE, TYPE.CLOTH);
+            black.style.setProperty('--sx', '-46px');
+            white.style.setProperty('--sx', '46px');
+            black.style.setProperty('--rot', '-7deg');
+            white.style.setProperty('--rot', '7deg');
+            black.classList.add('cf-cloth-drift');
+            white.classList.add('cf-cloth-drift');
+            setTimeout(function () {
+                black.style.transition = 'opacity 0.45s ease';
+                white.style.transition = 'opacity 0.45s ease';
+                black.style.opacity = '0';
+                white.style.opacity = '0';
+                [[0, 0], [30, -18], [-30, 14]].forEach(function (cfg) {
+                    const cloud = document.createElement('div');
+                    cloud.className = 'cf-cloud';
+                    cloud.style.cssText = 'position:absolute;left:' + (c.x - 30 + cfg[0]) + 'px;top:' + (c.y - 30 + cfg[1]) + 'px;width:60px;height:60px;border-radius:50%;background:radial-gradient(circle,rgba(230,247,244,0.8) 0%,rgba(210,240,236,0.5) 45%,rgba(210,240,236,0) 75%);z-index:55;pointer-events:none;filter:blur(3px);';
+                    boardEl.appendChild(cloud);
+                    setTimeout(function () { cloud.remove(); }, 900);
+                });
+                fxBurst(c.x, c.y, { colors: ['#D6F0EA', '#EAF6F3', '#FFFFFF'], count: 10, speed: 2, size: 3, up: 1, gravity: -0.04, decay: 0.03 });
+                setTimeout(function () {
+                    black.remove(); white.remove();
+                }, 500);
+            }, 520);
         }
         function applyRoundFx(fx) {
             if (!fx) return;
@@ -529,12 +675,31 @@
                 if (strong) safeVibrate(60);
                 else if (light) safeVibrate(30);
             } else if (fx.kind === 'clash') {
-                playClashFx(fx.row, fx.col);
-                const el = document.querySelector('.piece[data-row="' + fx.row + '"][data-col="' + fx.col + '"]');
-                if (el) el.classList.add('cf-win-pop');
-                safeVibrate([60, 40, 60]);
+                // 先输家落子，再赢家落子，然后按赢家招法对决
+                const winner = fx.winner;
+                const winType = winner === PLAYER.BLACK ? fx.blackType : fx.whiteType;
+                const loseType = winner === PLAYER.BLACK ? fx.whiteType : fx.blackType;
+                const loseEl = spawnTempPiece(fx.row, fx.col, winner === PLAYER.BLACK ? PLAYER.WHITE : PLAYER.BLACK, loseType);
+                loseEl.style.zIndex = '30';
+                playDropFx(loseEl, loseType);
+                const winEl = document.querySelector('.piece[data-row="' + fx.row + '"][data-col="' + fx.col + '"]');
+                if (winEl) winEl.style.visibility = 'hidden';
+                setTimeout(function () {
+                    loseEl.style.zIndex = '5';
+                    if (winEl) { winEl.style.visibility = 'visible'; playDropFx(winEl, winType); }
+                    setTimeout(function () {
+                        if (winType === TYPE.STONE) playClashFx(fx.row, fx.col);
+                        else if (winType === TYPE.SCISSORS) scissorWinFx(fx.row, fx.col);
+                        else clothWinFx(fx.row, fx.col);
+                        loseEl.remove();
+                        if (winEl) winEl.classList.add('cf-win-pop');
+                        safeVibrate([60, 40, 60]);
+                    }, 300);
+                }, 300);
             } else if (fx.kind === 'draw') {
-                playDrawFx(fx.row, fx.col);
+                if (fx.type === TYPE.STONE) stoneTieFx(fx.row, fx.col);
+                else if (fx.type === TYPE.SCISSORS) scissorTieFx(fx.row, fx.col);
+                else clothTieFx(fx.row, fx.col);
                 safeVibrate([60, 30, 60, 30]);
             }
         }
@@ -552,6 +717,13 @@
             }
             const cw = boardEl.offsetWidth || 500;
             fxBurst(cw / 2, cw / 2, { colors: ['#E4D48F', '#94D8C3', '#C9A7E8', '#8BC8EA'], count: 26, speed: 5, size: 3, up: 2.4, gravity: 0.09, decay: 0.02 });
+            // 终局彩带雨
+            if (typeof confetti !== 'undefined') {
+                const confColors = ['#E4D48F', '#94D8C3', '#C9A7E8', '#8BC8EA', '#F4B393'];
+                confetti({ particleCount: 90, spread: 70, origin: { y: 0.6 }, colors: confColors });
+                setTimeout(function () { confetti({ particleCount: 60, angle: 60, spread: 55, origin: { x: 0 }, colors: confColors }); }, 250);
+                setTimeout(function () { confetti({ particleCount: 60, angle: 120, spread: 55, origin: { x: 1 }, colors: confColors }); }, 400);
+            }
             safeVibrate([120, 50, 120]);
         }
         function playLoseFx() {
@@ -569,8 +741,27 @@
             safeVibrate([80, 60, 80]);
         }
         function playDrawEndFx() {
-            const cw = boardEl.offsetWidth || 500;
-            fxBurst(cw / 2, cw / 2, { colors: ['#9EACEA', '#C9A7E8', '#94D8C3'], count: 22, speed: 4, size: 2.5, gravity: 0.04, decay: 0.025 });
+            try {
+                if (typeof tsParticles !== 'undefined') {
+                    const box = document.createElement('div');
+                    box.id = 'tsp-drawend';
+                    box.style.cssText = 'position:absolute;inset:0;z-index:80;pointer-events:none;';
+                    boardEl.appendChild(box);
+                    tsParticles.load('tsp-drawend', {
+                        fullScreen: false, fpsLimit: 60,
+                        particles: {
+                            number: { value: 60 },
+                            color: { value: ['#FFFFFF', '#E5F2F8', '#D6E9F2'] },
+                            shape: { type: 'circle' },
+                            opacity: { value: { min: 0.4, max: 0.85 } },
+                            size: { value: { min: 1.5, max: 5 } },
+                            move: { enable: true, speed: 1.2, direction: 'bottom', random: true, outModes: { default: 'out' }, gravity: { enable: true, acceleration: 0.06 } }
+                        }
+                    }).then(function (container) {
+                        setTimeout(function () { try { container.destroy(); } catch (e) {} }, 3200);
+                    })['catch'](function () {});
+                }
+            } catch (e) {}
             safeVibrate([90, 50, 90]);
         }
         // 游戏常量
@@ -1691,9 +1882,9 @@
                         visible: false
                     };
                     resultEl.textContent = `双方出了相同类型，此位置下回合禁下`;
-                    roundFx = { kind: 'draw', row: black.row, col: black.col };
+                    roundFx = { kind: 'draw', row: black.row, col: black.col, type: black.type };
                     // 显示"静如止水"提示（延迟到动效结束后）
-                    setTimeout(() => showEventPopup("静如止水", "尴尬的相遇凝结了时间，冻结了空气"), 500);
+                    setTimeout(() => showEventPopup("静如止水", "尴尬的相遇凝结了时间，冻结了空气"), 1000);
                 } else if (
                     (black.type === TYPE.STONE && white.type === TYPE.SCISSORS) ||
                     (black.type === TYPE.SCISSORS && white.type === TYPE.CLOTH) ||
@@ -1705,9 +1896,9 @@
                         visible: true
                     };
                     resultEl.textContent = `黑方胜利，留下黑棋`;
-                    roundFx = { kind: 'clash', row: black.row, col: black.col };
+                    roundFx = { kind: 'clash', row: black.row, col: black.col, blackType: black.type, whiteType: white.type, winner: PLAYER.BLACK };
                     // 显示"飞沙走石"提示（延迟到动效结束后）
-                    setTimeout(() => showEventPopup("飞沙走石", "输掉的棋子就应该扔进什刹海"), 500);
+                    setTimeout(() => showEventPopup("飞沙走石", "输掉的棋子就应该扔进什刹海"), 1000);
                 } else {
                     game.board[white.row][white.col] = {
                         player: PLAYER.WHITE,
@@ -1715,9 +1906,9 @@
                         visible: true
                     };
                     resultEl.textContent = `白方胜利，留下白棋`;
-                    roundFx = { kind: 'clash', row: white.row, col: white.col };
+                    roundFx = { kind: 'clash', row: white.row, col: white.col, blackType: black.type, whiteType: white.type, winner: PLAYER.WHITE };
                     // 显示"飞沙走石"提示（延迟到动效结束后）
-                    setTimeout(() => showEventPopup("飞沙走石", "输掉的棋子就应该扔进什刹海"), 500);
+                    setTimeout(() => showEventPopup("飞沙走石", "输掉的棋子就应该扔进什刹海"), 1000);
                 }
             } else {
                 game.board[black.row][black.col].visible = true;
@@ -2240,11 +2431,6 @@
         window.onload = () => {
             initBoard();
             connectToServer();
-            
-            // 初始化特殊事件弹窗元素
-            eventPopup = document.getElementById('event-popup');
-            eventTitle = document.getElementById('event-title');
-            eventSubtitle = document.getElementById('event-subtitle');
         };
     </script>
 </body>
