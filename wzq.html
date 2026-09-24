@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>猜拳五子棋</title>
+    <title>彩泉五子棋</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
     <script>
@@ -293,10 +293,10 @@
     <div class="w-full max-w-6xl mx-auto">
         <header class="text-center mb-6 md:mb-8">
             <h1 class="text-[clamp(1.8rem,5vw,2.8rem)] font-bold text-primary flex items-center justify-center gap-3">
-                <i class="fa fa-gamepad text-accent"></i>
-                猜拳五子棋
+                <i class="fa fa-shield text-accent"></i>
+                彩泉五子棋
             </h1>
-            <p class="text-gray-500 mt-2">就是在传统的五子棋加入猜拳好好玩，要爆了！</p>
+            <p class="text-gray-500 mt-2">彩泉宗改良五子棋，就是在传统的五子棋加入彩泉宗三绝技好好玩，要爆了！</p>
         </header>
 
         <div class="flex flex-col lg:flex-row gap-6 lg:gap-8 items-center lg:items-start">
@@ -343,16 +343,16 @@
                     <h3 class="text-gray-700 font-medium mb-3 text-center">选择棋子类型</h3>
                     <div class="flex gap-3 justify-center flex-wrap" id="type-selection">
                         <div class="btn-type" data-type="0">
-                            <i class="fa fa-scissors mr-2 text-lg"></i>剪刀
+                            <i class="fa fa-scissors mr-2 text-lg"></i>裂风铰
                         </div>
                         <div class="btn-type" data-type="1">
-                            <i class="fa fa-hand-rock-o mr-2 text-lg"></i>石头
+                            <i class="fa fa-hand-rock-o mr-2 text-lg"></i>玄岩劲
                         </div>
                         <div class="btn-type" data-type="2">
-                            <i class="fa fa-hand-paper-o mr-2 text-lg"></i>布
+                            <i class="fa fa-hand-paper-o mr-2 text-lg"></i>覆云掌
                         </div>
                     </div>
-                    <p class="text-xs text-gray-400 text-center mt-2">手机端：长按棋盘交叉点，向四个方向滑动直接出招（←石头 ↑剪刀 →布 ↓取消）</p>
+                    <p class="text-xs text-gray-400 text-center mt-2">手机端：长按棋盘交叉点，滑动选择你的三绝技直接出招（←玄岩劲 ↑裂风铰 →覆云掌 ↓取消）</p>
                 </div>
                 
                 <div class="game-card">
@@ -431,7 +431,7 @@
             placed: false    // 手势已落子（用于抑制随后的合成 click）
         };
 
-        // 滑动方向 → 出招类型（用户约定：左=石头，上=剪刀，右=布，下=取消）
+        // 滑动方向 → 出招类型（用户约定：左=玄岩劲，上=裂风铰，右=覆云掌，下=取消）
         const SWIPE_DIR_TYPE = {
             left: TYPE.STONE,
             up: TYPE.SCISSORS,
@@ -1381,7 +1381,7 @@
             g.style.height = gs + 'px';
             g.style.left = `${MARGIN + col * CELL_SIZE - gs / 2}px`;
             g.style.top = `${MARGIN + row * CELL_SIZE - gs / 2}px`;
-            // 位置永远定在预选交叉点；有方向时显示对应手势图案（石头/剪刀/布），无方向时显示空预选圆
+            // 位置永远定在预选交叉点；有方向时显示对应手势图案（玄岩劲/裂风铰/覆云掌），无方向时显示空预选圆
             g.innerHTML = (type !== null && type !== undefined) ? getTypeIcon(type) : '';
             g.classList.remove('hidden');
         }
@@ -1920,9 +1920,9 @@
         // 辅助函数：获取类型名称
         function getTypeName(type) {
             switch (type) {
-                case TYPE.SCISSORS: return '剪刀';
-                case TYPE.STONE: return '石头';
-                case TYPE.CLOTH: return '布';
+                case TYPE.SCISSORS: return '裂风铰';
+                case TYPE.STONE: return '玄岩劲';
+                case TYPE.CLOTH: return '覆云掌';
                 default: return '未知';
             }
         }
